@@ -167,6 +167,7 @@ def doc_analyze(
 
     device = get_device()
 
+    batch_analyze = False
     npu_support = False
     if str(device).startswith("npu"):
         import torch_npu
@@ -195,26 +196,52 @@ def doc_analyze(
 
     model_json = []
     doc_analyze_start = time.time()
+    if batch_analyze:
+        # batch analyze
+        images = []
+        for index in range(len(dataset)):
+            if start_page_id <= index <= end_page_id:
+                page_data = dataset.get_page(index)
+                img_dict = page_data.get_image()
+                images.append(img_dict['img'])
+        analyze_result = batch_model(images)
 
-    for index in range(len(dataset)):
-        if start_page_id <= index <= end_page_id:
-            page_data = dataset.get_page(index)
-            img_dict = page_data.get_image()
-            img = img_dict['img']
-            page_width = img_dict['width']
-            page_height = img_dict['height']
-            page_start = time.time()
-            result = custom_model(img, index)
-            logger.info(f'-----page_id : {index}, page total time: {round(time.time() - page_start, 2)}-----')
-        else:
-            page_width = 0
-            page_height = 0
-            page_info = None
-            result = []
+        for index in range(len(dataset)):
+            if start_page_id <= index <= end_page_id:
+                page_data = dataset.get_page(index)
+                img_dict = page_data.get_image()
+                page_width = img_dict['width']
+                page_height = img_dict['height']
+                result = analyze_result.pop(0)
+            else:
+                page_width = 0
+                page_height = 0
+                page_info = None
+                result = []
 
-        page_info = {'page_no': index, 'height': page_height, 'width': page_width}
-        page_dict = {'layout_dets': result, 'page_info': page_info}
-        model_json.append(page_dict)
+            page_info = {'page_no': index, 'height': page_height, 'width': page_width}
+            page_dict = {'layout_dets': result, 'page_info': page_info}
+            model_json.append(page_dict)
+    else:
+        for index in range(len(dataset)):
+            if start_page_id <= index <= end_page_id:
+                page_data = dataset.get_page(index)
+                img_dict = page_data.get_image()
+                img = img_dict['img']
+                page_width = img_dict['width']
+                page_height = img_dict['height']
+                page_start = time.time()
+                result = custom_model(img, index)
+                logger.info(f'-----page_id : {index}, page total time: {round(time.time() - page_start, 2)}-----')
+            else:
+                page_width = 0
+                page_height = 0
+                page_info = None
+                result = []
+
+            page_info = {'page_no': index, 'height': page_height, 'width': page_width}
+            page_dict = {'layout_dets': result, 'page_info': page_info}
+            model_json.append(page_dict)
 
     doc_analyze_time = round(time.time() - doc_analyze_start, 2)
     doc_analyze_speed = round((end_page_id + 1 - start_page_id) / doc_analyze_time, 2)
