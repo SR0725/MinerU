@@ -9,12 +9,12 @@ from typing import List
 import fitz
 import torch
 from loguru import logger
+import json
 
 from magic_pdf.config.enums import SupportedPdfParseMethod
 from magic_pdf.config.ocr_content_type import BlockType, ContentType
 from magic_pdf.data.dataset import Dataset, PageableData
 from magic_pdf.libs.boxbase import calculate_overlap_area_in_bbox1_area_ratio, __is_overlaps_y_exceeds_threshold
-from magic_pdf.libs.clean_memory import clean_memory
 from magic_pdf.libs.config_reader import get_local_layoutreader_model_dir, get_llm_aided_config, get_device
 from magic_pdf.libs.convert_utils import dict_to_list
 from magic_pdf.libs.hash_utils import compute_md5
@@ -897,10 +897,10 @@ def pdf_parse_union(
     parse_mode,
     start_page_id=0,
     end_page_id=None,
-    debug_mode=False,
+    debug_mode=True,
     lang=None,
 ):
-
+    
     pdf_bytes_md5 = compute_md5(dataset.data_bits())
 
     """初始化空的pdf_info_dict"""
@@ -925,27 +925,22 @@ def pdf_parse_union(
     start_time = time.time()
 
     for page_id, page in enumerate(dataset):
+        if not(start_page_id <= page_id <= end_page_id):
+            continue
+
         """debug时输出每页解析的耗时."""
-        if debug_mode:
-            time_now = time.time()
-            logger.info(
-                f'page_id: {page_id}, last_page_cost_time: {round(time.time() - start_time, 2)}'
-            )
-            start_time = time_now
+        time_now = time.time()
+        logger.info(
+            f'page_id: {page_id}, last_page_cost_time: {round(time.time() - start_time, 2)}'
+        )
+        start_time = time_now
 
         """解析pdf中的每一页"""
-        if start_page_id <= page_id <= end_page_id:
-            page_info = parse_page_core(
-                page, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang
-            )
-        else:
-            page_info = page.get_page_info()
-            page_w = page_info.w
-            page_h = page_info.h
-            page_info = ocr_construct_page_component_v2(
-                [], [], page_id, page_w, page_h, [], [], [], [], [], True, 'skip page'
-            )
+        page_info = parse_page_core(
+            page, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang
+        )
         pdf_info_dict[f'page_{page_id}'] = page_info
+
 
     """分段"""
     para_split(pdf_info_dict)
@@ -980,8 +975,6 @@ def pdf_parse_union(
     new_pdf_info_dict = {
         'pdf_info': pdf_info_list,
     }
-
-    clean_memory(get_device())
 
     return new_pdf_info_dict
 

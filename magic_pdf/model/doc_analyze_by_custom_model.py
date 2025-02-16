@@ -23,7 +23,6 @@ except ImportError:
 
 import magic_pdf.model as model_config
 from magic_pdf.data.dataset import Dataset
-from magic_pdf.libs.clean_memory import clean_memory
 from magic_pdf.libs.config_reader import (get_device, get_formula_config,
                                           get_layout_config,
                                           get_local_models_dir,
@@ -158,14 +157,14 @@ def doc_analyze(
     table_enable=None,
 ) -> InferenceResult:
 
-    end_page_id = end_page_id if end_page_id else len(dataset) - 1
+    if end_page_id is None:
+        end_page_id = len(dataset) - 1
 
     model_manager = ModelSingleton()
     custom_model = model_manager.get_model(
         ocr, show_log, lang, layout_model, formula_enable, table_enable
     )
 
-    batch_analyze = False
     device = get_device()
 
     npu_support = False
@@ -197,54 +196,25 @@ def doc_analyze(
     model_json = []
     doc_analyze_start = time.time()
 
-    if batch_analyze:
-        # batch analyze
-        images = []
-        for index in range(len(dataset)):
-            if start_page_id <= index <= end_page_id:
-                page_data = dataset.get_page(index)
-                img_dict = page_data.get_image()
-                images.append(img_dict['img'])
-        analyze_result = batch_model(images)
-
-        for index in range(len(dataset)):
-            page_data = dataset.get_page(index)
-            img_dict = page_data.get_image()
-            page_width = img_dict['width']
-            page_height = img_dict['height']
-            if start_page_id <= index <= end_page_id:
-                result = analyze_result.pop(0)
-            else:
-                result = []
-
-            page_info = {'page_no': index, 'height': page_height, 'width': page_width}
-            page_dict = {'layout_dets': result, 'page_info': page_info}
-            model_json.append(page_dict)
-
-    else:
-        # single analyze
-
-        for index in range(len(dataset)):
+    for index in range(len(dataset)):
+        if start_page_id <= index <= end_page_id:
             page_data = dataset.get_page(index)
             img_dict = page_data.get_image()
             img = img_dict['img']
             page_width = img_dict['width']
             page_height = img_dict['height']
-            if start_page_id <= index <= end_page_id:
-                page_start = time.time()
-                result = custom_model(img)
-                logger.info(f'-----page_id : {index}, page total time: {round(time.time() - page_start, 2)}-----')
-            else:
-                result = []
+            page_start = time.time()
+            result = custom_model(img, index)
+            logger.info(f'-----page_id : {index}, page total time: {round(time.time() - page_start, 2)}-----')
+        else:
+            page_width = 0
+            page_height = 0
+            page_info = None
+            result = []
 
-            page_info = {'page_no': index, 'height': page_height, 'width': page_width}
-            page_dict = {'layout_dets': result, 'page_info': page_info}
-            model_json.append(page_dict)
-
-    gc_start = time.time()
-    clean_memory(get_device())
-    gc_time = round(time.time() - gc_start, 2)
-    logger.info(f'gc time: {gc_time}')
+        page_info = {'page_no': index, 'height': page_height, 'width': page_width}
+        page_dict = {'layout_dets': result, 'page_info': page_info}
+        model_json.append(page_dict)
 
     doc_analyze_time = round(time.time() - doc_analyze_start, 2)
     doc_analyze_speed = round((end_page_id + 1 - start_page_id) / doc_analyze_time, 2)
