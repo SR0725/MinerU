@@ -43,7 +43,7 @@ def process_single_page(ds: PymuDocDataset, page_id: int, image_writer: FileBase
     if is_ocr:
         # OCR 模式處理：進行 layout 分析後進行文字提取
         infer_result = ds.apply(doc_analyze, ocr=True, start_page_id=page_id, end_page_id=page_id)
-        page_result = infer_result.pip(image_writer, start_page_id=page_id, end_page_id=page_id)
+        page_result = infer_result.pipe_ocr_mode(image_writer, start_page_id=page_id, end_page_id=page_id)
     else:
         # 非 OCR 模式處理：直接進行文字提取
         infer_result = ds.apply(doc_analyze, ocr=False, start_page_id=page_id, end_page_id=page_id)
