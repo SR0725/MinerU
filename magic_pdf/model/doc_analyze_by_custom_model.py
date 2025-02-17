@@ -231,7 +231,7 @@ def doc_analyze(
                 page_width = img_dict['width']
                 page_height = img_dict['height']
                 page_start = time.time()
-                result = custom_model(img, index)
+                result = custom_model(img)
                 logger.info(f'-----page_id : {index}, page total time: {round(time.time() - page_start, 2)}-----')
             else:
                 page_width = 0
