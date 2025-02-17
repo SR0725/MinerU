@@ -13,14 +13,13 @@ from magic_pdf.libs.config_reader import get_device
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-def emit_progress(job_id: str, pageIndex: int, is_done: bool, content: dict, img_dir: str) -> None:
+def emit_progress(job_id: str, pageIndex: int, content: dict, img_dir: str) -> None:
     """
     透過 SocketIO 發送進度更新訊息。
 
     參數:
         job_id: 工作識別碼。
         pageIndex: 當前處理頁面。
-        is_done: 是否為最後一頁。
         content: 頁面處理後的中間結果。
     """
     print(f"img_dir: {img_dir}")
@@ -28,10 +27,19 @@ def emit_progress(job_id: str, pageIndex: int, is_done: bool, content: dict, img
         'jobId': job_id,
         'pageIndex': pageIndex,
         'imgDir': img_dir,
-        'isDone': is_done,
         'content': content
     }
     socketio.emit('page_processed', progress_data)
+    socketio.sleep(0)
+
+def emit_final_result(job_id: str, pages: list):
+    """
+    透過 SocketIO 發送最終處理結果。
+    """
+    socketio.emit('all_page_processed', {
+        'jobId': job_id,
+        'pages': pages
+    })
     socketio.sleep(0)
 
 def process_single_page(ds: PymuDocDataset, page_id: int, image_writer: FileBasedDataWriter, is_ocr: bool):
@@ -83,23 +91,33 @@ def process_pdf(pdf_file_path: str, job_id: str):
 
     # 逐頁處理 PDF
     for page_id in range(page_count):
-        print(f"開始處理第 {page_id + 1} 頁")
+        print(f"開始處理第 {page_id} 頁")
         page_start_time = time.time()
 
         # 處理單一頁面
         page_result = process_single_page(ds, page_id, image_writer, is_ocr)
-        pipe_results.append(page_result)
+
+        page_middle_json = page_result.get_middle_json()
 
         # 發送進度更新訊息
         emit_progress(
             job_id=job_id,
-            pageIndex=page_id + 1,
-            is_done=(page_id == page_count - 1),
-            content=page_result.get_middle_json(),
+            pageIndex=page_id,
+            content=page_middle_json,
             img_dir=output_abs_dir
         )
 
-        print(f"第 {page_id + 1} 頁處理完畢，耗時 {time.time() - page_start_time:.2f} 秒")
+        pipe_results.append({
+            "pageIndex": page_id,
+            "content": page_middle_json,
+            "imgDir": output_abs_dir
+        })
+
+
+        print(f"第 {page_id} 頁處理完畢，耗時 {time.time() - page_start_time:.2f} 秒")
+
+    # 發送最終處理結果
+    emit_final_result(job_id, pipe_results)
 
     # 清除 GPU 或其他資源記憶體
     clean_memory(get_device())
