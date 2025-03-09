@@ -147,8 +147,12 @@ def process_pdf_final_result(pdf_file_path: str, job_id: str):
     
     job_data = processing_results[job_id]
     
-    # 清除 GPU 或其他資源記憶體
-    clean_memory(get_device())
+    # 從處理結果字典中刪除工作資料
+    del processing_results[job_id]
+    
+    # 當所有任務都結束且沒有其他任務才清理記憶體
+    if len(processing_results) == 0:
+        clean_memory(get_device())
     
     total_time = time.time() - job_data["start_time"]
     print(f"所有頁面處理完畢，總耗時 {total_time:.2f} 秒")
@@ -161,13 +165,50 @@ def process_pdf_final_result(pdf_file_path: str, job_id: str):
         "pages": job_data["pages"]
     }
     
+    # 刪除臨時資料夾
+    image_folder = os.path.join("output", job_id)
+    if os.path.exists(image_folder):
+        shutil.rmtree(image_folder)
+    
+    return result
+
+def stop_processing(job_id: str):
+    """
+    停止PDF處理任務
+    
+    參數:
+        job_id: 工作識別碼
+        
+    回傳:
+        包含結果的字典
+    """
+    if job_id not in processing_results:
+        return {"error": "未找到此工作"}, 404
+    
+    job_data = processing_results[job_id]
+    
     # 刪除處理資料
     del processing_results[job_id]
+    
+    # 當所有任務都結束且沒有其他任務才清理記憶體
+    if len(processing_results) == 0:
+        clean_memory(get_device())
     
     # 刪除臨時資料夾
     image_folder = os.path.join("output", job_id)
     if os.path.exists(image_folder):
         shutil.rmtree(image_folder)
+    
+    total_time = time.time() - job_data["start_time"]
+    
+    # 整理最終結果
+    result = {
+        "status": "stopped",
+        "message": f"已停止處理 {job_data['pdf_file_name']} 的工作",
+        "processing_time": total_time,
+        "processed_pages": len(job_data["pages"]),
+        "total_pages": job_data["page_count"]
+    }
     
     return result
 
@@ -248,6 +289,30 @@ def handle_pdf_complete():
 
         try:
             result = process_pdf_final_result(fileAbsolutePath, job_id)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/stop-processing', methods=['POST'])
+def handle_stop_processing():
+    """
+    處理停止PDF處理的HTTP請求。
+    """
+    try:
+        # 從 JSON 請求體中獲取資料
+        data = request.get_json()
+        
+        # 檢查是否有提供必要資料
+        job_id = data.get('jobId')
+        if not job_id:
+            return jsonify({"error": "未提供jobId"}), 400
+        
+        print(f"停止處理工作 '{job_id}'")
+
+        try:
+            result = stop_processing(job_id)
             return jsonify(result)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
